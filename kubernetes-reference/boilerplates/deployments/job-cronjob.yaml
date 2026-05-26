@@ -1,0 +1,65 @@
+# Job (run-to-completion tasks)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: my-job
+  namespace: default
+spec:
+  completions: 1               # how many pods must succeed
+  parallelism: 1               # how many pods run in parallel
+  backoffLimit: 3              # retries before marking failed
+  activeDeadlineSeconds: 600   # job timeout in seconds
+
+  template:
+    metadata:
+      labels:
+        app: my-job
+    spec:
+      restartPolicy: OnFailure   # Never | OnFailure (not Always)
+      containers:
+        - name: my-job
+          image: busybox
+          command: ["sh", "-c", "echo 'Running job...' && sleep 5 && echo 'Done!'"]
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+
+---
+# CronJob (scheduled recurring jobs — like cron in Linux)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: my-cronjob
+  namespace: default
+spec:
+  # Cron format: minute hour day-of-month month day-of-week
+  schedule: "0 2 * * *"         # every day at 2:00 AM
+  # schedule: "*/5 * * * *"     # every 5 minutes
+  # schedule: "0 0 * * 0"       # every Sunday at midnight
+
+  timeZone: "Asia/Kolkata"       # optional timezone
+  concurrencyPolicy: Forbid      # Allow | Forbid | Replace
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  startingDeadlineSeconds: 100   # deadline to start if missed
+
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cron-task
+              image: busybox
+              command:
+                - /bin/sh
+                - -c
+                - echo "Running scheduled task at $(date)"
+              resources:
+                requests:
+                  memory: "32Mi"
+                  cpu: "50m"

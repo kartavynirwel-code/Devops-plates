@@ -1,0 +1,159 @@
+# Full-Featured Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-deployment-full
+  namespace: default
+  labels:
+    app: my-app
+    version: "1.0"
+  annotations:
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 3
+
+  # ─── Selector (must match pod template labels) ───────────────────────────────
+  selector:
+    matchLabels:
+      app: my-app
+
+  # ─── Update Strategy ─────────────────────────────────────────────────────────
+  strategy:
+    type: RollingUpdate            # RollingUpdate | Recreate
+    rollingUpdate:
+      maxSurge: 1                  # how many extra pods during update
+      maxUnavailable: 0            # how many pods can be down during update
+
+  # ─── How many old ReplicaSets to keep ────────────────────────────────────────
+  revisionHistoryLimit: 5
+
+  # ─── Pod Template ────────────────────────────────────────────────────────────
+  template:
+    metadata:
+      labels:
+        app: my-app
+        version: "1.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+
+    spec:
+      serviceAccountName: default
+      terminationGracePeriodSeconds: 30
+
+      # ─── Init Containers ────────────────────────────────────────────────────
+      initContainers:
+        - name: init-migrations
+          image: my-app:latest
+          command: ["python", "manage.py", "migrate"]
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: my-configmap
+                  key: db_host
+
+      # ─── Main Containers ─────────────────────────────────────────────────────
+      containers:
+        - name: my-app
+          image: my-app:1.0.0
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: metrics
+              containerPort: 9090
+
+          env:
+            - name: APP_ENV
+              value: "production"
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: my-secret
+                  key: db_password
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          envFrom:
+            - configMapRef:
+                name: my-configmap
+
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "1000m"
+
+          volumeMounts:
+            - name: config
+              mountPath: /etc/config
+              readOnly: true
+            - name: data
+              mountPath: /app/data
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 3
+
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 10"]
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+
+      # ─── Volumes ──────────────────────────────────────────────────────────────
+      volumes:
+        - name: config
+          configMap:
+            name: my-configmap
+        - name: data
+          persistentVolumeClaim:
+            claimName: my-pvc
+
+      # ─── Scheduling ───────────────────────────────────────────────────────────
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - my-app
+              topologyKey: "kubernetes.io/hostname"
+
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: my-app

@@ -1,0 +1,6 @@
+# Kubernetes Reference — Git Ignore
+*.swp
+*.swo
+.DS_Store
+*.bak
+*.tmp

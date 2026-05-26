@@ -1,0 +1,92 @@
+# ============================================================
+# Storage Boilerplates — PersistentVolume, PVC, StorageClass
+# ============================================================
+
+# ─── 1. StorageClass ──────────────────────────────────────────────────────────
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-storage
+provisioner: kubernetes.io/aws-ebs       # change per cloud provider
+# provisioner: kubernetes.io/gce-pd      # GKE
+# provisioner: disk.csi.azure.com        # AKS
+# provisioner: rancher.io/local-path     # local dev
+parameters:
+  type: gp3
+  fsType: ext4
+reclaimPolicy: Retain                    # Retain | Delete | Recycle
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer  # Immediate | WaitForFirstConsumer
+
+---
+# ─── 2. PersistentVolume (manual/static provisioning) ────────────────────────
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce                      # RWO | ROX (ReadOnlyMany) | RWX (ReadWriteMany)
+  reclaimPolicy: Retain
+  hostPath:
+    path: "/mnt/data"                    # local path on node (dev only)
+  # For NFS:
+  # nfs:
+  #   server: nfs-server.example.com
+  #   path: "/exports/data"
+
+---
+# ─── 3. PersistentVolumeClaim ─────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+  namespace: default
+spec:
+  storageClassName: fast-storage         # match StorageClass name
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+# ─── 4. PVC bound to specific PV (using selector) ───────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-specific-pvc
+  namespace: default
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  selector:
+    matchLabels:
+      type: local
+
+---
+# ─── 5. Using PVC in a Pod ────────────────────────────────────────────────────
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pvc-pod-example
+spec:
+  containers:
+    - name: app
+      image: nginx
+      volumeMounts:
+        - mountPath: "/usr/share/nginx/html"
+          name: my-storage
+  volumes:
+    - name: my-storage
+      persistentVolumeClaim:
+        claimName: my-pvc

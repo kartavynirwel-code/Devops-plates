@@ -1,0 +1,24 @@
+# Multi-Port Service (app + metrics + admin)
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-multiport-svc
+  namespace: default
+spec:
+  type: ClusterIP
+  selector:
+    app: my-app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: https
+      port: 443
+      targetPort: 8443
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+    - name: grpc
+      port: 50051
+      targetPort: 50051
+      protocol: TCP

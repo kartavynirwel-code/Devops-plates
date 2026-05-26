@@ -1,0 +1,92 @@
+# ============================================================
+# Kubernetes Service Types — All Boilerplates
+# ============================================================
+
+# ─── 1. ClusterIP (default — internal only) ──────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-clusterip-svc
+  namespace: default
+  labels:
+    app: my-app
+spec:
+  type: ClusterIP
+  selector:
+    app: my-app                  # routes to pods with this label
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80                   # service port
+      targetPort: 8080           # pod's container port
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 8443
+
+---
+# ─── 2. NodePort (accessible on every node's IP + a port) ───────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-nodeport-svc
+  namespace: default
+spec:
+  type: NodePort
+  selector:
+    app: my-app
+  ports:
+    - protocol: TCP
+      port: 80                   # ClusterIP port
+      targetPort: 8080           # pod port
+      nodePort: 30080            # external port (30000–32767); omit = auto-assign
+
+---
+# ─── 3. LoadBalancer (cloud-provisioned external LB) ────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-loadbalancer-svc
+  namespace: default
+  annotations:
+    # AWS example:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # GKE example:
+    # cloud.google.com/load-balancer-type: "External"
+spec:
+  type: LoadBalancer
+  selector:
+    app: my-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  # Optional: restrict which IPs can access
+  loadBalancerSourceRanges:
+    - "203.0.113.0/24"
+
+---
+# ─── 4. ExternalName (DNS alias to external service) ────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-external-svc
+  namespace: default
+spec:
+  type: ExternalName
+  externalName: api.example.com  # maps to this external DNS name
+
+---
+# ─── 5. Headless Service (no ClusterIP — for StatefulSets/direct pod DNS) ───
+apiVersion: v1
+kind: Service
+metadata:
+  name: my-headless-svc
+  namespace: default
+spec:
+  clusterIP: None                # headless = no virtual IP
+  selector:
+    app: my-db
+  ports:
+    - port: 5432
+      targetPort: 5432

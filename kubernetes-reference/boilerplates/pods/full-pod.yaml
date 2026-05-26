@@ -1,0 +1,157 @@
+# Full-Featured Pod (all common options)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: my-pod-full
+  namespace: default
+  labels:
+    app: my-app
+    version: "1.0"
+    env: production
+  annotations:
+    description: "My full-featured pod"
+spec:
+  restartPolicy: Always            # Always | OnFailure | Never
+  serviceAccountName: default
+
+  # ─── Init Containers (run before main containers) ───────────────────────────
+  initContainers:
+    - name: init-db
+      image: busybox
+      command: ['sh', '-c', 'until nc -z db-service 5432; do echo waiting; sleep 2; done']
+
+  # ─── Main Containers ─────────────────────────────────────────────────────────
+  containers:
+    - name: my-container
+      image: nginx:1.25
+      imagePullPolicy: Always      # Always | IfNotPresent | Never
+
+      ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+
+      # Environment variables (plain)
+      env:
+        - name: APP_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+
+        # From ConfigMap
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: my-configmap
+              key: db_host
+
+        # From Secret
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: my-secret
+              key: password
+
+      # Load all keys from ConfigMap as env vars
+      envFrom:
+        - configMapRef:
+            name: my-configmap
+        - secretRef:
+            name: my-secret
+
+      # Resource requests and limits
+      resources:
+        requests:
+          memory: "128Mi"
+          cpu: "250m"
+        limits:
+          memory: "256Mi"
+          cpu: "500m"
+
+      # Volume Mounts
+      volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config
+          readOnly: true
+        - name: data-volume
+          mountPath: /data
+
+      # Liveness Probe (restart if unhealthy)
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 80
+        initialDelaySeconds: 15
+        periodSeconds: 20
+        failureThreshold: 3
+
+      # Readiness Probe (receive traffic only when ready)
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 10
+
+      # Startup Probe (for slow-starting apps)
+      startupProbe:
+        httpGet:
+          path: /healthz
+          port: 80
+        failureThreshold: 30
+        periodSeconds: 10
+
+      # Lifecycle hooks
+      lifecycle:
+        postStart:
+          exec:
+            command: ["/bin/sh", "-c", "echo started > /tmp/started"]
+        preStop:
+          exec:
+            command: ["/bin/sh", "-c", "sleep 5"]
+
+  # ─── Volumes ─────────────────────────────────────────────────────────────────
+  volumes:
+    - name: config-volume
+      configMap:
+        name: my-configmap
+
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: my-pvc
+
+    - name: secret-volume
+      secret:
+        secretName: my-secret
+
+    - name: empty-volume
+      emptyDir: {}
+
+  # ─── Scheduling ──────────────────────────────────────────────────────────────
+  nodeSelector:
+    kubernetes.io/os: linux
+
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "gpu"
+      effect: "NoSchedule"
+
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                    - my-app
+            topologyKey: kubernetes.io/hostname
+
+  # ─── Security ────────────────────────────────────────────────────────────────
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 2000

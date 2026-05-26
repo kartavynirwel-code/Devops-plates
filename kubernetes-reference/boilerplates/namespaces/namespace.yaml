@@ -1,0 +1,76 @@
+# ============================================================
+# Namespace Boilerplates
+# ============================================================
+
+# ─── 1. Basic Namespace ───────────────────────────────────────────────────────
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: my-namespace
+  labels:
+    env: production
+    team: backend
+
+---
+# ─── 2. ResourceQuota (limits total resources in a namespace) ─────────────────
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: my-quota
+  namespace: my-namespace
+spec:
+  hard:
+    # Compute
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+
+    # Object counts
+    pods: "20"
+    services: "10"
+    persistentvolumeclaims: "10"
+    secrets: "20"
+    configmaps: "20"
+    replicationcontrollers: "0"
+
+    # LoadBalancer services
+    services.loadbalancers: "2"
+    services.nodeports: "0"
+
+---
+# ─── 3. LimitRange (default limits for containers in a namespace) ─────────────
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: my-limitrange
+  namespace: my-namespace
+spec:
+  limits:
+    # Default limits for containers that don't specify their own
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "256Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "2"
+        memory: "2Gi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"
+
+    # Limits for entire pods
+    - type: Pod
+      max:
+        cpu: "4"
+        memory: "4Gi"
+
+    # Limits for PVC sizes
+    - type: PersistentVolumeClaim
+      max:
+        storage: "50Gi"
+      min:
+        storage: "1Gi"

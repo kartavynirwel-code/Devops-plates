@@ -1,0 +1,38 @@
+# Multi-Container Pod (Sidecar Pattern)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: multi-container-pod
+  labels:
+    app: my-app
+spec:
+  containers:
+
+    # ─── Main App Container ───────────────────────────────────────────────────
+    - name: app
+      image: nginx:latest
+      ports:
+        - containerPort: 80
+      volumeMounts:
+        - name: shared-logs
+          mountPath: /var/log/nginx
+
+    # ─── Sidecar: Log Shipper ────────────────────────────────────────────────
+    - name: log-shipper
+      image: busybox
+      command: ['sh', '-c', 'tail -f /var/log/nginx/access.log']
+      volumeMounts:
+        - name: shared-logs
+          mountPath: /var/log/nginx
+
+    # ─── Sidecar: Metrics Exporter ───────────────────────────────────────────
+    - name: metrics
+      image: nginx/nginx-prometheus-exporter:latest
+      ports:
+        - containerPort: 9113
+      args:
+        - -nginx.scrape-uri=http://localhost:80/stub_status
+
+  volumes:
+    - name: shared-logs
+      emptyDir: {}
