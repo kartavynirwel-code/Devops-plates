@@ -420,6 +420,20 @@ docker images
 | **Terraform** | Infrastructure as Code |
 | **AWS ECR** | Docker Hub ka AWS alternative |
 
+
 ---
+deployment.yaml     service.yaml       ingress.yaml
+───────────────     ────────────       ────────────
+kind: Deployment    kind: Service      kind: Ingress
+
+spec:               spec:              spec:
+  replicas: 3         selector:          rules:
+  template:             app: xyz           - host:
+    containers:       ports:                 paths:
+      - image: xyz      - port: 80             - path: /
+        port: 8080        target: 8080           backend:
+                      type: NodePort               service:
+
+"App chalao"        "App expose karo"  "Traffic route karo"
 
 *"Ek baar pipeline set karo — phir sirf git push karo, baaki sab automatic!"* 🚀
