@@ -422,6 +422,7 @@ docker images
 
 
 ---
+---
 deployment.yaml     service.yaml       ingress.yaml
 ───────────────     ────────────       ────────────
 kind: Deployment    kind: Service      kind: Ingress
@@ -435,5 +436,5 @@ spec:               spec:              spec:
                       type: NodePort               service:
 
 "App chalao"        "App expose karo"  "Traffic route karo"
-
+---
 *"Ek baar pipeline set karo — phir sirf git push karo, baaki sab automatic!"* 🚀
