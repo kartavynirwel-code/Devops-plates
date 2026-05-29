@@ -1,0 +1,152 @@
+// ─────────────────────────────────────────────────────────────
+// Scripted Pipeline — Advanced
+// Use: Parallel testing, Auto rollback, Notifications
+// ─────────────────────────────────────────────────────────────
+
+// ─── Global Config ───────────────────────────────────────────
+def config = [
+    appName    : 'devops-spring-app',
+    dockerImage: 'your-dockerhub-username/devops-spring-app',
+    dockerTag  : env.BUILD_NUMBER,
+    namespace  : 'default',
+    helmChart  : './helm/mychart'
+]
+
+// ─── Helper Functions ────────────────────────────────────────
+
+// Docker build + push
+def buildAndPushDocker(config) {
+    withCredentials([usernamePassword(
+        credentialsId: 'docker-hub-creds',
+        usernameVariable: 'DOCKER_USER',
+        passwordVariable: 'DOCKER_PASS'
+    )]) {
+        sh """
+            docker build -t ${config.dockerImage}:${config.dockerTag} .
+            docker tag ${config.dockerImage}:${config.dockerTag} ${config.dockerImage}:latest
+            docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}
+            docker push ${config.dockerImage}:${config.dockerTag}
+            docker push ${config.dockerImage}:latest
+        """
+    }
+}
+
+// Helm deploy
+def helmDeploy(config, environment) {
+    sh """
+        helm upgrade --install ${config.appName} ${config.helmChart} \
+            --values ${config.helmChart}/${environment}-values.yaml \
+            --set image.tag=${config.dockerTag} \
+            --namespace ${environment} \
+            --create-namespace
+    """
+}
+
+// Rollback on failure
+def rollback(config, environment) {
+    echo "🔄 Rolling back ${config.appName} in ${environment}..."
+    sh "helm rollback ${config.appName} 0 --namespace ${environment}"
+}
+
+// ─── Main Pipeline ───────────────────────────────────────────
+node {
+
+    def previousTag = ''
+
+    try {
+
+        // ── 1. Checkout ──────────────────────────────────────
+        stage('Checkout') {
+            checkout scm
+            echo "Branch: ${env.BRANCH_NAME}"
+            echo "Build:  #${env.BUILD_NUMBER}"
+        }
+
+        // ── 2. Build ─────────────────────────────────────────
+        stage('Build') {
+            sh 'mvn clean package -DskipTests'
+            archiveArtifacts 'target/*.jar'
+        }
+
+        // ── 3. Parallel Tests ────────────────────────────────
+        stage('Tests') {
+            parallel(
+                'Unit Tests': {
+                    sh 'mvn test'
+                    junit '**/target/surefire-reports/*.xml'
+                },
+                'Code Quality': {
+                    withSonarQubeEnv('SonarQube') {
+                        sh 'mvn sonar:sonar'
+                    }
+                },
+                'Security Scan': {
+                    sh 'mvn org.owasp:dependency-check-maven:check'
+                }
+            )
+        }
+
+        // ── 4. Docker ────────────────────────────────────────
+        stage('Docker Build & Push') {
+            // Save previous tag for rollback
+            previousTag = sh(
+                script: "kubectl get deployment/${config.appName} -o jsonpath='{.spec.template.spec.containers[0].image}' | cut -d: -f2",
+                returnStdout: true
+            ).trim()
+
+            buildAndPushDocker(config)
+        }
+
+        // ── 5. Deploy Dev ────────────────────────────────────
+        stage('Deploy → Dev') {
+            helmDeploy(config, 'dev')
+            sh "kubectl rollout status deployment/${config.appName} -n dev"
+            echo '✅ Dev deployment successful'
+        }
+
+        // ── 6. Smoke Test ────────────────────────────────────
+        stage('Smoke Test') {
+            // Wait for app to be ready
+            sh 'sleep 10'
+            def devUrl = sh(
+                script: "minikube service ${config.appName} --url -n dev",
+                returnStdout: true
+            ).trim()
+            sh "curl -f ${devUrl}/api/health"
+            echo '✅ Smoke test passed'
+        }
+
+        // ── 7. Prod Approval ─────────────────────────────────
+        stage('Approval') {
+            if (env.BRANCH_NAME == 'main') {
+                input message: "🚨 Deploy ${config.appName}:${config.dockerTag} to PROD?",
+                      ok: 'Deploy!',
+                      submitter: 'admin,devops-lead'
+            }
+        }
+
+        // ── 8. Deploy Prod ───────────────────────────────────
+        stage('Deploy → Prod') {
+            if (env.BRANCH_NAME == 'main') {
+                try {
+                    helmDeploy(config, 'prod')
+                    sh "kubectl rollout status deployment/${config.appName} -n prod"
+                    echo '✅ Production deployment successful!'
+                } catch (Exception e) {
+                    echo '❌ Prod deployment failed — rolling back!'
+                    rollback(config, 'prod')
+                    throw e
+                }
+            }
+        }
+
+    } catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        echo "💥 Pipeline failed: ${e.getMessage()}"
+        throw e
+
+    } finally {
+        cleanWs()
+        sh 'docker image prune -f'
+    }
+}

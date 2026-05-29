@@ -1,0 +1,186 @@
+// ─────────────────────────────────────────────────────────────
+// Declarative Pipeline — Advanced (Dev → Staging → Prod)
+// Use: Full CI/CD with environment promotion
+// ─────────────────────────────────────────────────────────────
+
+pipeline {
+    agent any
+
+    environment {
+        APP_NAME     = 'devops-spring-app'
+        DOCKER_IMAGE = "your-dockerhub-username/${APP_NAME}"
+        DOCKER_TAG   = "${BUILD_NUMBER}"
+        GIT_COMMIT_SHORT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+    }
+
+    tools {
+        maven 'Maven-3.9'
+        jdk   'JDK-17'
+    }
+
+    // ─── Parameters — Manual trigger options ────────────────
+    parameters {
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['dev', 'staging', 'prod'],
+            description: 'Which environment to deploy?'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip unit tests?'
+        )
+        string(
+            name: 'IMAGE_TAG',
+            defaultValue: '',
+            description: 'Custom image tag (leave empty for BUILD_NUMBER)'
+        )
+    }
+
+    stages {
+
+        // ── 1. Checkout ──────────────────────────────────────
+        stage('Checkout') {
+            steps {
+                echo "📥 Checking out branch: ${env.BRANCH_NAME}"
+                checkout scm
+            }
+        }
+
+        // ── 2. Build ─────────────────────────────────────────
+        stage('Build') {
+            steps {
+                echo '🔨 Building application...'
+                sh 'mvn clean package -DskipTests=${SKIP_TESTS}'
+                archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+            }
+        }
+
+        // ── 3. Tests ─────────────────────────────────────────
+        stage('Tests') {
+            when {
+                expression { params.SKIP_TESTS == false }
+            }
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        sh 'mvn test'
+                    }
+                    post {
+                        always {
+                            junit '**/target/surefire-reports/*.xml'
+                        }
+                    }
+                }
+                stage('Integration Tests') {
+                    steps {
+                        sh 'mvn verify -P integration-tests'
+                    }
+                }
+            }
+        }
+
+        // ── 4. Code Quality ──────────────────────────────────
+        stage('Code Quality') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar -Dsonar.projectKey=${APP_NAME}'
+                }
+            }
+        }
+
+        // ── 5. Docker Build & Push ───────────────────────────
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    def tag = params.IMAGE_TAG ?: env.DOCKER_TAG
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-creds',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh """
+                            docker build -t ${DOCKER_IMAGE}:${tag} .
+                            docker login -u $DOCKER_USER -p $DOCKER_PASS
+                            docker push ${DOCKER_IMAGE}:${tag}
+                        """
+                    }
+                }
+            }
+        }
+
+        // ── 6. Deploy to Dev ─────────────────────────────────
+        stage('Deploy → Dev') {
+            when {
+                expression { params.ENVIRONMENT == 'dev' }
+            }
+            steps {
+                echo '🚀 Deploying to Dev...'
+                sh """
+                    helm upgrade --install ${APP_NAME} ./helm/mychart \
+                        --values ./helm/dev-values.yaml \
+                        --set image.tag=${DOCKER_TAG} \
+                        --namespace dev
+                """
+            }
+        }
+
+        // ── 7. Deploy to Staging ─────────────────────────────
+        stage('Deploy → Staging') {
+            when {
+                expression { params.ENVIRONMENT == 'staging' }
+            }
+            steps {
+                echo '🚀 Deploying to Staging...'
+                sh """
+                    helm upgrade --install ${APP_NAME} ./helm/mychart \
+                        --values ./helm/staging-values.yaml \
+                        --set image.tag=${DOCKER_TAG} \
+                        --namespace staging
+                """
+            }
+        }
+
+        // ── 8. Deploy to Prod (Manual Approval) ─────────────
+        stage('Approval → Prod') {
+            when {
+                expression { params.ENVIRONMENT == 'prod' }
+            }
+            steps {
+                // Manual approval before prod deploy
+                input message: '🚨 Deploy to PRODUCTION?',
+                      ok: 'Yes, Deploy!',
+                      submitter: 'admin'
+            }
+        }
+
+        stage('Deploy → Prod') {
+            when {
+                expression { params.ENVIRONMENT == 'prod' }
+            }
+            steps {
+                echo '🚀 Deploying to Production...'
+                sh """
+                    helm upgrade --install ${APP_NAME} ./helm/mychart \
+                        --values ./helm/prod-values.yaml \
+                        --set image.tag=${DOCKER_TAG} \
+                        --namespace prod
+                """
+                sh "kubectl rollout status deployment/${APP_NAME} -n prod"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Deployed ${APP_NAME}:${DOCKER_TAG} to ${params.ENVIRONMENT}"
+        }
+        failure {
+            echo "❌ Deployment failed for ${APP_NAME}"
+        }
+        always {
+            cleanWs()
+            sh 'docker image prune -f'
+        }
+    }
+}

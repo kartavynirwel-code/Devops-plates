@@ -1,0 +1,77 @@
+// ─────────────────────────────────────────────────────────────
+// Scripted Pipeline — Basic
+// Use: More control, Groovy-based, flexible
+// Note: Scripted = More code but more power
+// ─────────────────────────────────────────────────────────────
+
+// ─── Variables ───────────────────────────────────────────────
+def APP_NAME     = 'devops-spring-app'
+def DOCKER_IMAGE = "your-dockerhub-username/${APP_NAME}"
+def DOCKER_TAG   = "${env.BUILD_NUMBER}"
+
+// ─── Main Node ───────────────────────────────────────────────
+node {
+
+    try {
+
+        // ── 1. Checkout ──────────────────────────────────────
+        stage('Checkout') {
+            echo '📥 Checking out code...'
+            checkout scm
+        }
+
+        // ── 2. Build ─────────────────────────────────────────
+        stage('Build') {
+            echo '🔨 Building JAR...'
+            def mvnHome = tool 'Maven-3.9'
+            sh "${mvnHome}/bin/mvn clean package -DskipTests"
+        }
+
+        // ── 3. Test ──────────────────────────────────────────
+        stage('Test') {
+            echo '🧪 Running tests...'
+            def mvnHome = tool 'Maven-3.9'
+            sh "${mvnHome}/bin/mvn test"
+            junit '**/target/surefire-reports/*.xml'
+        }
+
+        // ── 4. Docker Build ──────────────────────────────────
+        stage('Docker Build') {
+            echo '🐳 Building Docker image...'
+            sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+        }
+
+        // ── 5. Docker Push ───────────────────────────────────
+        stage('Docker Push') {
+            echo '📤 Pushing to Docker Hub...'
+            withCredentials([usernamePassword(
+                credentialsId: 'docker-hub-creds',
+                usernameVariable: 'DOCKER_USER',
+                passwordVariable: 'DOCKER_PASS'
+            )]) {
+                sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                sh "docker push ${DOCKER_IMAGE}:${DOCKER_TAG}"
+            }
+        }
+
+        // ── 6. Deploy ────────────────────────────────────────
+        stage('Deploy') {
+            echo '☸️ Deploying to Kubernetes...'
+            sh "kubectl set image deployment/${APP_NAME} ${APP_NAME}=${DOCKER_IMAGE}:${DOCKER_TAG}"
+            sh "kubectl rollout status deployment/${APP_NAME}"
+        }
+
+        echo '🎉 Pipeline completed successfully!'
+
+    } catch (Exception e) {
+        // ─── Handle Errors ───────────────────────────────────
+        echo "💥 Pipeline failed: ${e.getMessage()}"
+        currentBuild.result = 'FAILURE'
+        throw e
+
+    } finally {
+        // ─── Always Run ──────────────────────────────────────
+        cleanWs()
+        sh 'docker image prune -f'
+    }
+}

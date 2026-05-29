@@ -1,0 +1,122 @@
+// ─────────────────────────────────────────────────────────────
+// Declarative Pipeline — Basic
+// Use: Simple Java Spring Boot CI/CD
+// ─────────────────────────────────────────────────────────────
+
+pipeline {
+    agent any
+
+    // ─── Global Environment Variables ───────────────────────
+    environment {
+        APP_NAME        = 'devops-spring-app'
+        DOCKER_IMAGE    = "your-dockerhub-username/${APP_NAME}"
+        DOCKER_TAG      = "${BUILD_NUMBER}"           // Jenkins build number as tag
+        DOCKER_REGISTRY = 'https://registry.hub.docker.com'
+        JAVA_HOME       = '/usr/lib/jvm/java-17-openjdk-amd64'
+    }
+
+    // ─── Tools (configured in Jenkins Global Tools) ─────────
+    tools {
+        maven 'Maven-3.9'         // Jenkins > Global Tool Config > Maven
+        jdk   'JDK-17'            // Jenkins > Global Tool Config > JDK
+    }
+
+    stages {
+
+        // ── 1. Checkout ──────────────────────────────────────
+        stage('Checkout') {
+            steps {
+                echo '📥 Checking out source code...'
+                checkout scm
+                sh 'echo Branch: $(git rev-parse --abbrev-ref HEAD)'
+                sh 'echo Commit: $(git rev-parse --short HEAD)'
+            }
+        }
+
+        // ── 2. Build ─────────────────────────────────────────
+        stage('Build') {
+            steps {
+                echo '🔨 Building JAR...'
+                sh 'mvn clean package -DskipTests'
+            }
+            post {
+                success { echo '✅ Build successful' }
+                failure { echo '❌ Build failed' }
+            }
+        }
+
+        // ── 3. Unit Tests ────────────────────────────────────
+        stage('Unit Tests') {
+            steps {
+                echo '🧪 Running unit tests...'
+                sh 'mvn test'
+            }
+            post {
+                always {
+                    // Publish test results
+                    junit '**/target/surefire-reports/*.xml'
+                }
+            }
+        }
+
+        // ── 4. Code Quality (SonarQube) ──────────────────────
+        stage('Code Quality') {
+            steps {
+                echo '🔍 Running SonarQube analysis...'
+                withSonarQubeEnv('SonarQube') {
+                    sh 'mvn sonar:sonar'
+                }
+            }
+        }
+
+        // ── 5. Docker Build ──────────────────────────────────
+        stage('Docker Build') {
+            steps {
+                echo '🐳 Building Docker image...'
+                sh "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
+                sh "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
+            }
+        }
+
+        // ── 6. Docker Push ───────────────────────────────────
+        stage('Docker Push') {
+            steps {
+                echo '📤 Pushing image to Docker Hub...'
+                withCredentials([usernamePassword(
+                    credentialsId: 'docker-hub-creds',    // Jenkins Credentials ID
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh "docker login -u $DOCKER_USER -p $DOCKER_PASS"
+                    sh "docker push ${DOCKER_IMAGE}:${DOCKER_TAG}"
+                    sh "docker push ${DOCKER_IMAGE}:latest"
+                }
+            }
+        }
+
+        // ── 7. Deploy to Kubernetes ──────────────────────────
+        stage('Deploy to K8s') {
+            steps {
+                echo '☸️ Deploying to Kubernetes...'
+                sh "kubectl set image deployment/${APP_NAME} ${APP_NAME}=${DOCKER_IMAGE}:${DOCKER_TAG}"
+                sh "kubectl rollout status deployment/${APP_NAME}"
+            }
+        }
+    }
+
+    // ─── Post Actions ────────────────────────────────────────
+    post {
+        success {
+            echo '🎉 Pipeline completed successfully!'
+        }
+        failure {
+            echo '💥 Pipeline failed! Check logs above.'
+        }
+        always {
+            // Clean workspace after build
+            cleanWs()
+            // Remove dangling docker images
+            sh 'docker image prune -f'
+        }
+    }
+}
