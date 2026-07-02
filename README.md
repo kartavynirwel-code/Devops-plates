@@ -17,6 +17,12 @@
 | `10-gateway-api` | Gateway API + Envoy setup, HTTPRoute YAML |
 | `11-eks` | EKS via Terraform (VPC, IAM, Cluster, Node Group) |
 | `12-service-mesh` | Istio service mesh setup guide |
+| `13-git-security` | Gitleaks, pre-commit hooks, branch protection, CODEOWNERS, Dependabot, STRIDE |
+| `14-container-security` | Docker hardening (non-root, distroless, multi-stage), Trivy |
+| `15-checkov` | IaC security scanning for Terraform, Kubernetes, Dockerfile |
+| `16-vault` | HashiCorp Vault — KV secrets, K8s Agent Injector, Spring Boot, GitHub OIDC |
+| `17-k8s-security` | Namespaces, RBAC, NetworkPolicy, Kyverno, Secrets, External Secrets Operator |
+| `18-appsec-sast-sca-dast` | SAST/SCA/DAST theory, tools, attacker flows, fixes, hands-on |
 
 ## 🛠️ Tools Covered
 
@@ -30,6 +36,12 @@
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat&logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat&logo=grafana&logoColor=white)
 ![Istio](https://img.shields.io/badge/Istio-466BB0?style=flat&logo=istio&logoColor=white)
+![Vault](https://img.shields.io/badge/Vault-FFEC6E?style=flat&logo=vault&logoColor=black)
+![OWASP](https://img.shields.io/badge/OWASP-000000?style=flat&logo=owasp&logoColor=white)
+![Trivy](https://img.shields.io/badge/Trivy-1904DA?style=flat&logoColor=white)
+![Checkov](https://img.shields.io/badge/Checkov-4B32C3?style=flat&logoColor=white)
+![Gitleaks](https://img.shields.io/badge/Gitleaks-FF6B6B?style=flat&logoColor=white)
+![Kyverno](https://img.shields.io/badge/Kyverno-2C3E50?style=flat&logoColor=white)
 
 ## 📚 Quick Links
 
@@ -79,6 +91,14 @@
 
 ### Service Mesh
 - [Istio Setup Guide](12-Service-mesh/istio-service-mesh-setup.md)
+
+### DevSecOps
+- [Git Security — Gitleaks, Branch Protection, STRIDE](13-git-security/README.md)
+- [Container Security — Docker Hardening, Trivy](14-container-security/README.md)
+- [Checkov — IaC Security Scanning](15-checkov/README.md)
+- [HashiCorp Vault — Secret Management](16-vault/README.md)
+- [Kubernetes Security — RBAC, NetworkPolicy, Kyverno, ESO](17-k8s-security/README.md)
+- [AppSec — SAST · SCA · DAST](18-appsec-sast-sca-dast/README.md)
 
 ## 🎯 Author
 
