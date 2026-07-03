@@ -1,0 +1,23 @@
+# Build stage
+FROM node:18-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+# Run stage
+FROM nginx:alpine
+
+# Nginx ko non-privileged port pe shift karo (non-root <1024 bind nahi kar sakta)
+RUN sed -i 's/listen\s*80;/listen 8080;/' /etc/nginx/conf.d/default.conf
+
+# Nginx jin folders mein runtime pe likhta hai, unka ownership badlo
+RUN chown -R 1000:1000 /var/cache/nginx /var/run /var/log/nginx /usr/share/nginx/html /etc/nginx/conf.d
+
+# Build output copy karo, direct correct owner ke saath
+COPY --from=build --chown=1000:1000 /app/dist /usr/share/nginx/html
+
+USER 1000:1000
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
