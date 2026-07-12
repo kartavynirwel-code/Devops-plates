@@ -78,6 +78,28 @@ docker run hello-world
 > Note: `usermod` ke baad naya SSH session lo ya `newgrp docker` chalao, warna permission denied milega.
 
 ---
+## 5. Docker Compose
+
+Multi-container apps (`docker-compose.yml`) define/run karne ke liye - tumhare ecommerce-microservices jaise projects me directly kaam aayega.
+
+```bash
+DOCKER_COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep '"tag_name"' | cut -d '"' -f4)
+sudo curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+```
+
+Verify:
+```bash
+docker-compose --version
+```
+
+> Note: Newer Docker installs already have Compose v2 built-in as a plugin (`docker compose`, no hyphen). Check karo pehle:
+> ```bash
+> docker compose version
+> ```
+> Agar woh kaam kar jaye to standalone binary install karne ki zarurat nahi.
+
+---
 
 ## 5. Jenkins
 
