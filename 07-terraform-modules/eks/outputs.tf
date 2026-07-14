@@ -38,3 +38,13 @@ output "kubeconfig_command" {
   description = "AWS CLI command to update kubeconfig"
   value       = "aws eks update-kubeconfig --name ${aws_eks_cluster.this.name} --region <your-region>"
 }
+
+output "oidc_provider_arn" {
+  description = "ARN of the EKS OIDC provider (used in IRSA role trust policies)"
+  value       = aws_iam_openid_connect_provider.eks_oidc.arn
+}
+
+output "oidc_provider_url" {
+  description = "Issuer URL of the EKS OIDC provider (without https://, for trust policy StringEquals key)"
+  value       = replace(aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
+}

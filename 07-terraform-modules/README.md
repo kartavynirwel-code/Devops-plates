@@ -85,6 +85,29 @@ module "eks" {
     }
   }
 }
+
+# IRSA: give a specific ServiceAccount its own IAM role instead of using
+# the shared node role. Repeat this block per app that needs AWS access.
+resource "aws_iam_role" "app_service_account" {
+  name = "devhub-prod-external-dns-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Federated = module.eks.oidc_provider_arn }
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Condition = {
+        StringEquals = {
+          "${module.eks.oidc_provider_url}:sub" = "system:serviceaccount:<namespace>:<service-account-name>"
+          "${module.eks.oidc_provider_url}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+# Then annotate the K8s ServiceAccount with:
+#   eks.amazonaws.com/role-arn: <aws_iam_role.app_service_account.arn>
 ```
 
 ## Versioning

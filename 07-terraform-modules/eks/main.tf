@@ -4,6 +4,10 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.0"
     }
+    tls = {
+      source  = "hashicorp/tls"
+      version = ">= 4.0"
+    }
   }
   required_version = ">= 1.3"
 }
@@ -113,4 +117,25 @@ resource "aws_eks_node_group" "this" {
   })
 
   depends_on = [aws_iam_role_policy_attachment.node_policies]
+}
+
+# ─── OIDC Provider (IRSA foundation) ─────────────────────────────────────────
+# IRSA (IAM Roles for Service Accounts) lets a K8s ServiceAccount assume an
+# IAM role directly — no more wide-open node IAM role shared by every pod.
+# This resource just registers the cluster's OIDC issuer with AWS IAM.
+# Actual per-app roles (e.g. for cert-manager, external-dns) are separate
+# aws_iam_role resources with an OIDC trust policy referencing this provider —
+# not created here, since those are workload-specific.
+data "tls_certificate" "eks_oidc" {
+  url = aws_eks_cluster.this.identity[0].oidc[0].issuer
+}
+
+resource "aws_iam_openid_connect_provider" "eks_oidc" {
+  url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  client_id_list  = ["sts.amazonaws.com"]
+  thumbprint_list = [data.tls_certificate.eks_oidc.certificates[0].sha1_fingerprint]
+
+  tags = merge(local.common_tags, {
+    Name = "${local.name_prefix}-eks-oidc"
+  })
 }

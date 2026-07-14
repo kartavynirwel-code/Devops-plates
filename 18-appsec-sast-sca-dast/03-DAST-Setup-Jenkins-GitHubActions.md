@@ -89,6 +89,46 @@ Without `-I`, ZAP returns a non-zero exit code if it finds WARN/FAIL-level alert
 ### Step 5: Install HTML Publisher Plugin (for report step above)
 Manage Jenkins → Plugins → Install: `HTML Publisher Plugin`
 
+### Troubleshooting: `zap_out.json` / Report File Permission Denied (Jenkins User Only)
+
+**Symptom**: The ZAP stage works fine when you run the same `docker run` command manually as the `ubuntu` user, but fails inside Jenkins with a permission error writing `zap_out.json` (or `zap-report.html`) — the container can't write to the mounted workspace.
+
+**Root cause**: ZAP's Docker image runs as its own internal user (`zap`, non-root) inside the container. When you mount `$(pwd):/zap/wrk/:rw`, ZAP writes the report as that internal container user. Running manually as `ubuntu` happens to line up with the file ownership on disk. But Jenkins runs the same `docker run` as the `jenkins` system user (a different UID), and the Jenkins workspace is owned by `jenkins:jenkins` — the container's internal `zap` UID has no write access to it, so the identical command fails only under Jenkins.
+
+**Fix options** (in order of preference):
+
+1. **Pass your UID into the container** so ZAP writes as a UID that already owns the mounted volume:
+   ```bash
+   docker run --rm -u $(id -u):$(id -g) \
+     -v $(pwd):/zap/wrk/:rw \
+     zaproxy/zap-stable zap-baseline.py \
+     -t http://staging.devhub.local \
+     -r zap-report.html -I
+   ```
+   In the Jenkinsfile, `$(id -u):$(id -g)` resolves to the `jenkins` user's UID/GID at runtime since the `sh` step executes as `jenkins`.
+
+2. **Pre-create the report file with open permissions before the scan**, so the container writes into an existing file instead of creating one under a mismatched owner:
+   ```groovy
+   stage('DAST - ZAP Baseline Scan') {
+       steps {
+           sh 'touch zap-report.html && chmod 666 zap-report.html'
+           sh '''
+               docker run --rm -v $(pwd):/zap/wrk/:rw \
+               zaproxy/zap-stable zap-baseline.py \
+               -t http://staging.devhub.local \
+               -r zap-report.html -I
+           '''
+       }
+   }
+   ```
+
+3. **Check the Jenkins workspace ownership itself** — if it's `root`-owned (common after a Docker-based agent misconfiguration), no UID mapping fixes it until that's corrected:
+   ```bash
+   ls -la $(pwd)   # run as a Jenkins pipeline sh step to confirm ownership
+   ```
+
+Option 1 is the cleanest fix and matches how most Jenkins + Docker DAST/SAST integrations handle this — the same pattern applies to similar permission errors with Trivy or any other containerized scan tool mounting the workspace.
+
 ---
 
 ## 6. DAST on GitHub Actions (using OWASP ZAP)

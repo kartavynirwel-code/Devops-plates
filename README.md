@@ -83,6 +83,7 @@
 
 ### Networking
 - [Nginx Ingress Controller](08-nginx-ingress/README.md)
+- [Ingress with TLS + Rate Limiting](08-nginx-ingress/ingress-tls-ratelimit.yaml)
 - [Gateway API + Envoy](10-gateway-api/README.md)
 
 ### EKS via Terraform
