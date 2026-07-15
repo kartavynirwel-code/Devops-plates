@@ -1,4 +1,4 @@
-# 09 - Prometheus + Grafana Monitoring
+# 01 - Monitoring (Prometheus + Grafana)
 
 ## Kya hai ye?
 Prometheus + Grafana = Kubernetes ka monitoring stack.
@@ -14,7 +14,7 @@ heartbeat (CPU, memory) ek screen pe dikhta hai!
 
 ## One-Time Setup
 Ek baar install karo — poore cluster ki monitoring hoti hai!
-Naya app deploy karo → automatically monitor hoga ✅
+Naya app deploy karo → automatically monitor hoga ✅ (agar sahi labels/annotations hon — Service Discovery section dekho)
 
 ## Install (Helm se)
 
@@ -33,6 +33,8 @@ helm install prometheus prometheus-community/kube-prometheus-stack \
 # Step 4: Verify karo
 kubectl get pods -n monitoring
 ```
+
+`kube-prometheus-stack` install hote hi **Prometheus Operator** bhi aata hai — ye operator hi Service Discovery ka core hai (neeche detail mein).
 
 ## Grafana Access
 
@@ -66,6 +68,73 @@ helm install prometheus prometheus-community/kube-prometheus-stack \
 3. Grafana → Dashboards → Import → ID paste karo
 4. Done! ✅
 ```
+
+---
+
+## Service Discovery — Prometheus apne aap targets kaise dhundta hai
+
+Traditional Prometheus mein `prometheus.yml` ke andar manually har target ka IP/port likhna padta tha. Kubernetes mein pods create/destroy hote rehte hain, IP change hote rehte hain — static config kaam nahi karega. Isiliye **Prometheus Operator** do custom CRDs deta hai jo automatic discovery karte hain:
+
+### 1) ServiceMonitor — Service ke through discovery
+Ye batata hai Prometheus ko: "is label wali Services ko scrape karo."
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: myapp-monitor
+  namespace: monitoring
+  labels:
+    release: prometheus   # kube-prometheus-stack release name se match hona chahiye
+spec:
+  selector:
+    matchLabels:
+      app: myapp           # tumhari Service pe ye label hona chahiye
+  namespaceSelector:
+    matchNames:
+      - default
+  endpoints:
+    - port: metrics         # Service ke andar named port
+      path: /metrics
+      interval: 30s
+```
+
+**Flow:** ServiceMonitor → Service (label match) → Service ke peeche wale Pods → un pods ke `/metrics` endpoint se scrape.
+
+### 2) PodMonitor — Pod ko directly discover karna
+Jab koi Service hi na ho (headless workloads, jobs), seedha Pod ko target karo:
+
+```yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: myapp-podmonitor
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: myapp
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+```
+
+### Verify — kya Prometheus ne target pick kiya?
+```bash
+kubectl get servicemonitor -n monitoring
+kubectl get podmonitor -n monitoring
+
+# Prometheus UI mein targets check karo
+kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n monitoring
+# Browser: http://localhost:9090/targets
+```
+
+### Common gotcha
+`release: prometheus` label **ServiceMonitor/PodMonitor dono** pe lagna zaroori hai — Prometheus Operator sirf `serviceMonitorSelector` mein configured label wale resources ko hi watch karta hai. Ye label na ho toh target list mein kabhi nahi aayega, koi error bhi nahi dikhega — silently ignore ho jayega.
+
+---
 
 ## PromQL Basics
 
@@ -106,6 +175,8 @@ irate(http_requests_total[5m])
 | Graph | Smooth | Spiky |
 | Best for | Dashboards, trends | Fast-changing metrics, alerts |
 | Gotcha | Short spike miss ho sakta hai | Noisy graph, misleading agar scrape interval bada hai |
+
+---
 
 ## Alertmanager — Alert Rules Setup
 
@@ -179,6 +250,8 @@ kubectl port-forward svc/prometheus-kube-prometheus-alertmanager 9093:9093 -n mo
 # Browser: http://localhost:9093
 ```
 
+---
+
 ## Debugging Commands
 
 ```bash
@@ -187,6 +260,9 @@ kubectl get pods -n monitoring
 
 # Grafana service
 kubectl get svc -n monitoring
+
+# ServiceMonitor / PodMonitor check
+kubectl get servicemonitor,podmonitor -n monitoring
 
 # Prometheus targets
 kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n monitoring
@@ -199,6 +275,7 @@ kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n moni
 2. **Production me** → Password Kubernetes Secret me store karo, hardcode nahi!
 3. **PrometheusRule apply kiya but alert fire nahi hua** → `release: prometheus` label check karo, ye Helm release name se exactly match hona chahiye warna Prometheus rule ko pick hi nahi karega
 4. **irate() ka spiky graph confuse kar raha** → yehi expected hai, dashboards ke liye `rate()` use karo, irate() sirf alerting/debugging ke liye
+5. **ServiceMonitor bana diya but target Prometheus UI mein nahi dikh raha** → same reason, `release: prometheus` label missing hai (ya jo bhi label `serviceMonitorSelector` mein configured hai)
 
 ## Interview Questions
 
@@ -209,12 +286,22 @@ kubectl port-forward svc/prometheus-kube-prometheus-prometheus 9090:9090 -n moni
 **Q: Grafana kya hai?**
 > Visualization tool — Prometheus ka raw data sundar dashboards me dikhata hai.
 
+**Q: Prometheus Kubernetes mein targets kaise discover karta hai?**
+> Prometheus Operator ke through ServiceMonitor/PodMonitor CRDs use hote hain.
+> ServiceMonitor label-matched Services ko target karta hai, PodMonitor seedha Pods ko —
+> dono cases mein Operator automatically Prometheus ka scrape config generate/update karta hai,
+> manual `prometheus.yml` editing ki zaroorat nahi padti.
+
+**Q: ServiceMonitor aur PodMonitor mein kab kaunsa use karoge?**
+> Agar workload ke aage Service hai (normal Deployment case) → ServiceMonitor.
+> Agar Service nahi hai (headless workload, batch Jobs) → PodMonitor seedha Pod ko target karta hai.
+
 **Q: rate() kyun use karte hain counter pe?**
 > Counter sirf badhta hai — restart pe reset hota hai.
 > rate() actual per-second speed nikalti hai jo meaningful hoti hai.
 
 **Q: kube-prometheus-stack kya hai?**
-> Helm chart jo Prometheus + Grafana + Alertmanager + Node Exporter
+> Helm chart jo Prometheus + Grafana + Alertmanager + Prometheus Operator + Node Exporter
 > sab ek saath install karta hai. Single command me production-ready setup!
 
 **Q: rate() aur irate() me kab kaunsa use karoge?**
