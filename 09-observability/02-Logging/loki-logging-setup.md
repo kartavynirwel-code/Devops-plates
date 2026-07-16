@@ -42,22 +42,54 @@ Create `loki-values.yaml`:
 
 ```yaml
 loki:
+  useTestSchema: true
+
+  auth_enabled: false
+
   commonConfig:
     replication_factor: 1
+
   storage:
     type: filesystem
-  auth_enabled: false
+
+deploymentMode: SingleBinary
 
 singleBinary:
   replicas: 1
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
-# Disable components not needed in single-binary/monolithic mode
+# Disable extra components not needed for single-node practice setup
+backend:
+  replicas: 0
 read:
   replicas: 0
 write:
   replicas: 0
-backend:
-  replicas: 0
+
+gateway:
+  enabled: false
+
+test:
+  enabled: false
+
+lokiCanary:
+  enabled: false
+
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+  serviceMonitor:
+    enabled: false
 ```
 
 Install:
