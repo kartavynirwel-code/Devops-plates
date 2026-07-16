@@ -95,7 +95,7 @@ spec:
       - default
   endpoints:
     - port: metrics         # Service ke andar named port
-      path: /metrics
+      path: /actuator/prometheus
       interval: 30s
 ```
 
