@@ -162,29 +162,76 @@ kubectl version --client
 ```
 
 ---
-
 ## 8. k3s / kind (Optional - Local Kubernetes Cluster)
 
 Agar EC2 pe hi lightweight K8s cluster chahiye (bina EKS ke).
 
-**k3s (single binary, production-grade lightweight K8s):**
+### k3s (single binary, production-grade lightweight K8s)
+
+Install:
 ```bash
 curl -sfL https://get.k3s.io | sh -
-sudo k3s kubectl get nodes
 ```
 
-**kind (Kubernetes in Docker - local testing/dev ke liye):**
+**Important — configure `kubectl` access:**
+K3s apna kubeconfig `/etc/rancher/k3s/k3s.yaml` mein banata hai, aur plain `kubectl` (system-installed) usko by default nahi dhoondta — isliye `kubectl get pods` seedha chalane pe `localhost:8080 connection refused` error aata hai. Fix:
+
+```bash
+mkdir -p ~/.kube
+sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
+sudo chown $(id -u):$(id -g) ~/.kube/config
+echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc
+source ~/.bashrc
+```
+
+Verify service is running:
+```bash
+sudo systemctl status k3s
+```
+
+If inactive:
+```bash
+sudo systemctl enable --now k3s
+```
+
+Verify cluster access:
+```bash
+kubectl get nodes
+kubectl get pods -A
+```
+
+> Alternative without kubeconfig setup: `sudo k3s kubectl get nodes` always works out of the box (uses k3s's bundled kubectl + embedded config directly), but requires `sudo` every time and doesn't work with Helm/other tools expecting standard `~/.kube/config`. The kubeconfig setup above is the one-time fix so plain `kubectl` and `helm` work normally afterward.
+
+---
+
+### kind (Kubernetes in Docker — local testing/dev ke liye)
+
+Install:
 ```bash
 curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.23.0/kind-linux-amd64
 chmod +x ./kind
 sudo mv ./kind /usr/local/bin/kind
 ```
 
-Verify:
+Create a cluster (kind doesn't auto-create one on install — this step was missing):
+```bash
+kind create cluster --name devops-practice
+```
+
+This automatically writes/merges its kubeconfig into `~/.kube/config`, so `kubectl` works immediately for this cluster — no manual kubeconfig copy needed (unlike k3s).
+
+---
+
+### Verify
+
 ```bash
 k3s --version
 kind --version
+kubectl get nodes        # shows whichever cluster's context is currently active
+kubectl config get-contexts   # lists all available cluster contexts (k3s, kind, etc.)
 ```
+
+> Note: If both k3s and kind are installed on the same machine, `kubectl config get-contexts` will show both — use `kubectl config use-context <name>` to switch between them.
 
 ---
 
