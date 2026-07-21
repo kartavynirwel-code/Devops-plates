@@ -1,0 +1,5 @@
+[allowlist]
+description = "Ignore observability values files with placeholder/demo credentials"
+paths = [
+  '''09-observability/03-Tracing/jaeger-values\.yaml'''
+]
